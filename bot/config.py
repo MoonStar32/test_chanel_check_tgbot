@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     # Logging
     log_level: str = "INFO"
 
+    # Integrations
+    google_service_account_json: str = ""
+    google_sheets_spreadsheet_id: str = ""
+
     @property
     def admin_id_list(self) -> list[int]:
         """Parse admin IDs from comma-separated string."""

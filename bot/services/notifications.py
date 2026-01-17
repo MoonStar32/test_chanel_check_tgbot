@@ -16,6 +16,19 @@ class NotificationService:
         self.bot = bot
         self.i18n = i18n
 
+    async def send_text(self, chat_id: int, text: str) -> bool:
+        """Send a plain text message."""
+        try:
+            await self.bot.send_message(
+                chat_id=chat_id,
+                text=text,
+                disable_web_page_preview=True,
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send text notification: {e}")
+            return False
+
     async def notify_member_event(
         self,
         event: MemberEvent,

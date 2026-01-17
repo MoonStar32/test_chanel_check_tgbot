@@ -3,11 +3,12 @@
 import csv
 import io
 from datetime import datetime, timedelta, timezone
+from statistics import mean
 
 from aiogram.types import BufferedInputFile
 
 from bot.i18n import I18n
-from bot.utils.formatting import format_stats_message, get_event_emoji
+from bot.utils.formatting import format_stats_message, format_user_link, get_event_emoji
 from database.models import Channel
 from database.repositories import EventRepository, MemberRepository
 
@@ -157,5 +158,222 @@ class AnalyticsService:
             lines.append(f"\n<i>{i18n('left.total', count=len(recent_events))}</i>")
         else:
             lines.append(f"\n<i>Total: {len(recent_events)}</i>")
+
+        return "\n".join(lines)
+
+    async def get_growth_dynamics_message(
+        self,
+        channel: Channel,
+        days: int = 30,
+        i18n: I18n | None = None,
+    ) -> str:
+        """Build growth dynamics message: daily flow, churn/net/forecast."""
+        stats = await self.event_repo.get_member_events_stats(channel.id, days)
+        flow = await self.event_repo.get_daily_member_flow(channel.id, days)
+        member_counts = await self.member_repo.count_by_status(channel.id)
+
+        joins = stats.get("join", 0)
+        leaves = stats.get("leave", 0) + stats.get("kick", 0)
+        net = joins - leaves
+
+        active_members = member_counts.get("member", 0)
+        total_population = active_members + member_counts.get("left", 0)
+        churn_rate = (leaves / total_population * 100) if total_population > 0 else 0.0
+        retention_rate = 100 - churn_rate
+
+        net_per_day = [day["net"] for day in flow] or [0]
+        avg_net = mean(net_per_day)
+        forecast_7d = int(round(avg_net * 7))
+
+        lines = []
+        if i18n:
+            lines.append(i18n("analytics.growth.title", title=channel.title))
+            lines.append(
+                i18n(
+                    "analytics.growth.summary",
+                    joins=joins,
+                    leaves=leaves,
+                    net=f"{net:+d}",
+                )
+            )
+            lines.append(
+                i18n(
+                    "analytics.growth.churn_retention",
+                    churn=f"{churn_rate:.1f}%",
+                    retention=f"{retention_rate:.1f}%",
+                )
+            )
+            lines.append(
+                i18n(
+                    "analytics.growth.forecast",
+                    forecast=f"{forecast_7d:+d}",
+                    avg=f"{avg_net:.1f}",
+                )
+            )
+        else:
+            lines.append(f"<b>Growth for {channel.title}</b>")
+            lines.append(f"Joins: {joins}, Leaves: {leaves}, Net: {net:+d}")
+            lines.append(f"Churn: {churn_rate:.1f}%, Retention: {retention_rate:.1f}%")
+            lines.append(f"Forecast 7d net: {forecast_7d:+d} (avg/day {avg_net:.1f})")
+
+        if flow:
+            lines.append("")
+            if i18n:
+                lines.append(i18n("analytics.growth.trend_header"))
+            else:
+                lines.append("Trend by day:")
+
+            for day in flow[-10:]:
+                date_str = day["day"].strftime("%d.%m")
+                lines.append(
+                    f"{date_str}: +{day['join']} / -{day['leave']} / net {day['net']:+d}"
+                )
+
+        return "\n".join(lines)
+
+    async def get_activity_insights_message(
+        self,
+        channel: Channel,
+        days: int = 30,
+        i18n: I18n | None = None,
+    ) -> str:
+        """Build time-of-day/day-of-week insights."""
+        activity = await self.event_repo.get_hourly_activity(channel.id, days)
+
+        if not activity:
+            return i18n("analytics.activity.no_data") if i18n else "No activity data."
+
+        # Top hours by joins
+        top_hours = sorted(activity, key=lambda x: x["joins"], reverse=True)[:5]
+
+        # Aggregate by dow
+        dow_totals: dict[int, int] = {}
+        for row in activity:
+            dow_totals[row["dow"]] = dow_totals.get(row["dow"], 0) + row["joins"]
+        top_days = sorted(dow_totals.items(), key=lambda x: x[1], reverse=True)[:3]
+
+        lines = []
+        if i18n:
+            lines.append(i18n("analytics.activity.title", title=channel.title))
+            lines.append(i18n("analytics.activity.best_hours"))
+            for row in top_hours:
+                lines.append(
+                    i18n(
+                        "analytics.activity.hour_line",
+                        hour=row["hour"],
+                        joins=row["joins"],
+                        net=f"{row['net']:+d}",
+                    )
+                )
+            lines.append("")
+            lines.append(i18n("analytics.activity.best_days"))
+            for dow, joins in top_days:
+                lines.append(
+                    i18n(
+                        "analytics.activity.day_line",
+                        dow=dow,
+                        joins=joins,
+                    )
+                )
+        else:
+            lines.append(f"<b>Activity for {channel.title}</b>")
+            lines.append("Top hours:")
+            for row in top_hours:
+                lines.append(
+                    f"  {row['hour']:02d}:00 — joins {row['joins']} (net {row['net']:+d})"
+                )
+            lines.append("Top days:")
+            for dow, joins in top_days:
+                lines.append(f"  DOW {dow}: joins {joins}")
+
+        return "\n".join(lines)
+
+    async def get_audience_insights_message(
+        self,
+        channel: Channel,
+        days: int = 60,
+        i18n: I18n | None = None,
+    ) -> str:
+        """Audience-focused analytics: sources, churners, returnees, ghosts."""
+        top_sources = await self.event_repo.get_top_inviter_sources(channel.id, days)
+        top_leavers = await self.event_repo.get_top_leavers(channel.id, days)
+        returnees = await self.event_repo.get_returnees(channel.id, days)
+        ghosts = await self.event_repo.get_inactive_members(channel.id, inactive_days=30)
+
+        lines = []
+        if i18n:
+            lines.append(i18n("analytics.audience.title", title=channel.title))
+        else:
+            lines.append(f"<b>Audience insights for {channel.title}</b>")
+
+        # Sources
+        if i18n:
+            lines.append(i18n("analytics.audience.sources"))
+        else:
+            lines.append("Sources:")
+        if top_sources:
+            for inviter_id, count in top_sources:
+                inviter = format_user_link(inviter_id, i18n=i18n)
+                lines.append(f"  {inviter}: {count}")
+        else:
+            lines.append(f"  {i18n('analytics.audience.no_sources') if i18n else 'No inviter data'}")
+
+        # Top leavers
+        lines.append("")
+        if i18n:
+            lines.append(i18n("analytics.audience.leavers"))
+        else:
+            lines.append("Top leavers:")
+        if top_leavers:
+            for row in top_leavers:
+                user = format_user_link(
+                    row["user_id"],
+                    row.get("first_name"),
+                    row.get("last_name"),
+                    row.get("username"),
+                    i18n,
+                )
+                lines.append(f"  {user}: {row['leaves']} leave(s)")
+        else:
+            lines.append(f"  {i18n('analytics.audience.no_leavers') if i18n else 'No leaves'}")
+
+        # Returnees
+        lines.append("")
+        if i18n:
+            lines.append(i18n("analytics.audience.returnees"))
+        else:
+            lines.append("Returnees:")
+        if returnees:
+            for row in returnees:
+                user = format_user_link(
+                    row["user_id"],
+                    row.get("first_name"),
+                    row.get("last_name"),
+                    row.get("username"),
+                    i18n,
+                )
+                lines.append(f"  {user}: +{row['joins']} / -{row['leaves']}")
+        else:
+            lines.append(f"  {i18n('analytics.audience.no_returnees') if i18n else 'No returnees'}")
+
+        # Ghosts
+        lines.append("")
+        if i18n:
+            lines.append(i18n("analytics.audience.ghosts"))
+        else:
+            lines.append("Inactive members:")
+        if ghosts:
+            for row in ghosts:
+                user = format_user_link(
+                    row["user_id"],
+                    row.get("first_name"),
+                    row.get("last_name"),
+                    row.get("username"),
+                    i18n,
+                )
+                joined = row["joined_at"].strftime("%d.%m") if row.get("joined_at") else "-"
+                lines.append(f"  {user}: joined {joined}")
+        else:
+            lines.append(f"  {i18n('analytics.audience.no_ghosts') if i18n else 'No inactive members'}")
 
         return "\n".join(lines)

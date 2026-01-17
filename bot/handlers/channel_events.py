@@ -6,8 +6,15 @@ from aiogram import Bot, Router
 from aiogram.types import ChatMemberUpdated
 
 from bot.i18n import I18n
+from bot.services.alerts import AlertService
 from bot.services.notifications import NotificationService
-from database.repositories import ChannelRepository, EventRepository, MemberRepository, UserRepository
+from database.repositories import (
+    AlertSettingsRepository,
+    ChannelRepository,
+    EventRepository,
+    MemberRepository,
+    UserRepository,
+)
 
 router = Router(name="channel_events")
 
@@ -39,6 +46,7 @@ def get_event_type(old_status: str, new_status: str) -> str:
 async def on_chat_member_update(
     event: ChatMemberUpdated,
     bot: Bot,
+    alert_repo: AlertSettingsRepository,
     channel_repo: ChannelRepository,
     member_repo: MemberRepository,
     event_repo: EventRepository,
@@ -112,6 +120,17 @@ async def on_chat_member_update(
     i18n = I18n(admin_lang)
     notification_service = NotificationService(bot, i18n)
     await notification_service.notify_member_event(member_event, channel)
+
+    # Alerts
+    settings = await alert_repo.get_or_create(chat.id)
+    alert_service = AlertService(bot, event_repo, member_repo, alert_repo, user_repo)
+    await alert_service.handle_member_event_alerts(
+        channel,
+        settings,
+        event_type,
+        user.id,
+        member_event.created_at,
+    )
 
 
 @router.my_chat_member()

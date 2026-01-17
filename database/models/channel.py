@@ -34,6 +34,12 @@ class Channel(Base, TimestampMixin):
         back_populates="channel",
         lazy="selectin",
     )
+    alert_settings: Mapped["AlertSettings"] = relationship(  # noqa: F821
+        "AlertSettings",
+        back_populates="channel",
+        uselist=False,
+        lazy="selectin",
+    )
 
     def __repr__(self) -> str:
         return f"<Channel(id={self.id}, title='{self.title}')>"

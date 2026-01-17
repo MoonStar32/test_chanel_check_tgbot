@@ -16,3 +16,6 @@ loguru==0.7.3
 
 # Utils
 python-dotenv==1.0.1
+fpdf2==2.7.9
+gspread==6.1.4
+google-auth==2.34.0

@@ -9,8 +9,10 @@ from aiogram.types import TelegramObject
 from bot.i18n import I18n
 from database import async_session_maker
 from database.repositories import (
+    AlertSettingsRepository,
     ChannelRepository,
     EventRepository,
+    GoogleSettingsRepository,
     MemberRepository,
     UserRepository,
 )
@@ -31,6 +33,8 @@ class DatabaseMiddleware(BaseMiddleware):
             data["member_repo"] = MemberRepository(session)
             data["event_repo"] = EventRepository(session)
             data["user_repo"] = UserRepository(session)
+            data["alert_repo"] = AlertSettingsRepository(session)
+            data["google_repo"] = GoogleSettingsRepository(session)
 
             # Get user language for i18n
             user_id = None

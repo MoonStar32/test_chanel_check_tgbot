@@ -82,8 +82,10 @@ Use `/setchat` command in any chat (private or group) to receive notifications t
 | `/stats` | View channel statistics |
 | `/recent` | Recent member events |
 | `/left` | Who left the channel recently |
-| `/export` | Export events to CSV |
+| `/export` | Export events (CSV / PDF / JSON / Sheets) |
 | `/setchat` | Set notification destination |
+| `/analytics` | Advanced analytics (growth, activity, audience) |
+| `/alerts` | Configure alert thresholds and digests |
 | `/help` | Help message |
 
 ## Project Structure
@@ -133,6 +135,8 @@ test_chanel_check_tgbot/
 | `DATABASE_URL` | PostgreSQL connection string | localhost |
 | `ADMIN_IDS` | Comma-separated admin user IDs | - |
 | `LOG_LEVEL` | Logging level | INFO |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Path to Google service account JSON for Sheets export | - |
+| `GOOGLE_SHEETS_SPREADSHEET_ID` | Spreadsheet ID for Sheets export | - |
 
 ## Development
 

@@ -9,8 +9,11 @@ from bot.config import settings
 from bot.handlers import setup_routers
 from bot.loader import bot, dp
 from bot.middlewares import DatabaseMiddleware
+from bot.services.alerts import run_digest_worker
 from database import init_db
 
+# Background tasks
+background_tasks: list[asyncio.Task] = []
 
 def setup_logging() -> None:
     """Configure loguru logging."""
@@ -50,12 +53,19 @@ async def on_startup() -> None:
     # Setup middlewares
     dp.update.middleware(DatabaseMiddleware())
 
+    # Start digest worker
+    task = asyncio.create_task(run_digest_worker(bot))
+    background_tasks.append(task)
+    logger.info("Digest worker started")
+
     logger.info("Bot started successfully!")
 
 
 async def on_shutdown() -> None:
     """Actions on bot shutdown."""
     logger.info("Shutting down bot...")
+    for task in background_tasks:
+        task.cancel()
     await bot.session.close()
     logger.info("Bot stopped")
 
